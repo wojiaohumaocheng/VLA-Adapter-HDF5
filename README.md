@@ -87,7 +87,7 @@ A higher value improves sampling efficiency by reducing the overhead of repeated
 ```bash
 torchrun --standalone --nnodes 1 --nproc-per-node 1 vla-scripts/finetune.py \
 --vlm_path pretrained_models/prism-qwen25-extra-dinosiglip-224px-0_5b --config_file_path pretrained_models/configs \
---data_root_dir /home/humaocheng/code/VLA-Adapter/datasets --dataset_name custom_dataset --run_root_dir outputs \
+--data_root_dir /home/humaocheng/code/VLA-Adapter-HDF5/datasets --dataset_name custom_dataset --run_root_dir outputs \
 --use_film False --num_images_in_input 3 --use_proprio True --use_lora True --use_fz False --use_minivlm True \
 --image_aug True --num_steps_before_decay 150000 --max_steps 150005 --save_freq 5000 --save_latest_checkpoint_only False \
 --merge_lora_during_training True --batch_size 1 --grad_accumulation_steps 1 --learning_rate 2e-4 --lora_rank 64 \
