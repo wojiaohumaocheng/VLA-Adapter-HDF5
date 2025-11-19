@@ -128,7 +128,6 @@ def make_dataset_from_rlds(
     if language_key is not None:
         REQUIRED_KEYS.add(language_key) # 'language_instruction'
 
-    @tf.autograph.experimental.do_not_convert
     def restructure(traj):
         # apply a standardization function, if provided
         if standardize_fn is not None:
