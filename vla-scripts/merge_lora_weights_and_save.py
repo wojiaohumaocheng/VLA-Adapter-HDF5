@@ -1,7 +1,7 @@
 
 """
 Loads a checkpoint that only has a LoRA adapter (no merged model) and merges the adapter
-into the base VLA-Adapter-HDF5 model. Saves the final checkpoint in the same directory.
+into the base VLA-Adapter model. Saves the final checkpoint in the same directory.
 
 Usage:
     python vla-scripts/merge_lora_weights_and_save.py \
