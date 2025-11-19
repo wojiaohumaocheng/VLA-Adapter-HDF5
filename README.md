@@ -6,7 +6,96 @@
 
 </div>
 
-### The official implementation of **VLA-Adapter**.
+###  1. Offline Model Weights Training (No VPN Required) 💾
+To support fully offline training and avoid slow downloads without a VPN, this project adds support for loading model weights from local directories. 
+You can also use a Hugging Face mirror (for example: https://hf-mirror.com/) to speed up downloads, and then move the weights to your local machine.
+
+#### 1.1 Prepare Offline Model Weights
+First, download the model weights from Hugging Face and place them under the pretrained_model directory:
+```bash
+# Qwen2.5
+git clone https://huggingface.co/Qwen/Qwen2.5-0.5B
+
+# DinoSglip
+git clone https://huggingface.co/timm/vit_large_patch14_reg4_dinov2.lvd142
+
+# prism-qwen25-extra-dinosglip-224px
+git clone https://huggingface.co/Stanford-ILIAD/prism-qwen25-extra-dinosiglip-224px-0_5b
+```
+Directory structure example:
+```
+pretrained_model/
+├── Qwen2.5-0.5B
+├── vit_large_patch14_reg4_dinov2.lvd142
+└── prism-qwen25-extra-dinosiglip-224px-0_5b
+
+```
+
+#### 1.2 Code Changes for Offline Loading
+
+The repository has already been updated to support offline model loading. Relevant files:
+  * [base_llm.py](https://github.com/wojiaohumaocheng/VLA-Adapter-HDF5/blob/main/prismatic/models/backbones/llm/base_llm.py)
+  * [qwen25.py](https://github.com/wojiaohumaocheng/VLA-Adapter-HDF5/blob/main/prismatic/models/backbones/llm/qwen25.py)
+  * [dinosiglip_vit.py](https://github.com/wojiaohumaocheng/VLA-Adapter-HDF5/blob/main/prismatic/models/backbones/vision/dinosiglip_vit.py)
+
+These modules will now load checkpoints from the local pretrained_model directory instead of downloading them at runtime. ✅
+
+---
+
+### 2. HDF5-Based Dataset Training Pipeline 📂(because TFDS cannot support large dataset with low CPU memory)
+:question: https://github.com/openvla/openvla/issues/39
+
+
+We add support for training directly from HDF5 files to better handle custom datasets and large-scale trajectories.
+
+#### 2.1 HDF5 Directory Layout
+HDF5 files are expected to be organized as follows:
+```
+├── custom_dataset
+   ├── pick_cola
+   │   ├── episode_0.hdf5 
+   │   ├── episode_1.hdf5
+   │   ├── episode_2.hdf5
+   │   ├── ...
+   ├── pour_water
+   │   ├── episode_0.hdf5 
+   │   ├── episode_1.hdf5
+   │   ├── episode_2.hdf5
+   │   ├── ...
+```
+
+
+The repository has already been modified to support HDF5-based training. Key files:
+* [data_utils.py](https://github.com/wojiaohumaocheng/VLA-Adapter-HDF5/blob/main/prismatic/vla/datasets/rlds/utils/data_utils.py)
+* [image_augment.py](https://github.com/wojiaohumaocheng/VLA-Adapter-HDF5/blob/main/prismatic/vla/datasets/rlds/utils/image_augment.py)
+* [__init__.py](https://github.com/wojiaohumaocheng/VLA-Adapter-HDF5/blob/main/prismatic/vla/datasets/__init__.py)
+* [datasets.py](https://github.com/wojiaohumaocheng/VLA-Adapter-HDF5/blob/main/prismatic/vla/datasets/datasets.py)
+* [finetune.py](https://github.com/wojiaohumaocheng/VLA-Adapter-HDF5/blob/main/vla-scripts/finetune.py)
+
+These components handle loading, preprocessing, and data augmentation for HDF5 episodes.
+
+
+### 3. Important Configuration Notes ⚙️
+#### 3.1 Set dataset_type to hdf5
+When using the HDF5 pipeline, make sure to set: `dataset_type=hdf5`, This is required so that the training script uses the HDF5 dataset loader instead of other dataset types.
+#### 3.2 Improve I/O Performance with num_samples_per_traj
+Reading from HDF5 can be relatively slow. To avoid I/O becoming a bottleneck and to keep training efficient, you should increase num_samples_per_traj (default is 4).
+For example: `num_samples_per_traj=4`
+
+A higher value improves sampling efficiency by reducing the overhead of repeatedly opening and reading many small HDF5 files during training. 🚀
+
+```bash
+torchrun --standalone --nnodes 1 --nproc-per-node 1 vla-scripts/finetune.py \
+--vlm_path pretrained_models/prism-qwen25-extra-dinosiglip-224px-0_5b --config_file_path pretrained_models/configs \
+--data_root_dir /home/humaocheng/code/VLA-Adapter/datasets --dataset_name custom_dataset --run_root_dir outputs \
+--use_film False --num_images_in_input 3 --use_proprio True --use_lora True --use_fz False --use_minivlm True \
+--image_aug True --num_steps_before_decay 150000 --max_steps 150005 --save_freq 5000 --save_latest_checkpoint_only False \
+--merge_lora_during_training True --batch_size 1 --grad_accumulation_steps 1 --learning_rate 2e-4 --lora_rank 64 \
+--use_pro_version True --wandb_entity "MaochengHu" --wandb_project "EA200-6-realman" \
+--run_id_note VLA-Adapter--spatial--$current_time --dataset_type hdf5 --num_samples_per_traj 4
+```
+
+### The no official implementation of **VLA-Adapter**. official repo refer https://github.com/OpenHelix-Team/VLA-Adapter
 <br/>
 
 <div id="top" align="center">
