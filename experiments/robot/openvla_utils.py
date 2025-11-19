@@ -1,4 +1,4 @@
-"""Utils for evaluating VLA-Adapter or fine-tuned VLA-Adapter policies."""
+"""Utils for evaluating VLA-Adapter-HDF5 or fine-tuned VLA-Adapter-HDF5 policies."""
 
 import filecmp
 import json
@@ -432,10 +432,10 @@ def get_proprio_projector(cfg: Any, llm_dim: int, proprio_dim: int) -> ProprioPr
     # Find and load checkpoint (may be on Hugging Face Hub or stored locally)
     if model_is_on_hf_hub(cfg.pretrained_checkpoint):
         model_path_to_proprio_projector_name = {
-            "VLA-Adapter/LIBERO-Spatial-Pro": "proprio_projector--checkpoint.pt",
-            "VLA-Adapter/LIBERO-Object-Pro": "proprio_projector--checkpoint.pt",
-            "VLA-Adapter/LIBERO-Goal-Pro": "proprio_projector--checkpoint.pt",
-            "VLA-Adapter/LIBERO-Long-Pro": "proprio_projector--checkpoint.pt",
+            "VLA-Adapter-HDF5/LIBERO-Spatial-Pro": "proprio_projector--checkpoint.pt",
+            "VLA-Adapter-HDF5/LIBERO-Object-Pro": "proprio_projector--checkpoint.pt",
+            "VLA-Adapter-HDF5/LIBERO-Goal-Pro": "proprio_projector--checkpoint.pt",
+            "VLA-Adapter-HDF5/LIBERO-Long-Pro": "proprio_projector--checkpoint.pt",
         }
         if cfg.pretrained_checkpoint not in model_path_to_proprio_projector_name.keys():
             raise ValueError("Unsupported HF Hub pretrained checkpoint found!")
@@ -518,10 +518,10 @@ def get_action_head(cfg: Any, llm_dim: int) -> Union[L1RegressionActionHead]:
     # Find and load checkpoint (may be on Hugging Face Hub or stored locally)
     if model_is_on_hf_hub(cfg.pretrained_checkpoint):
         model_path_to_action_head_name = {
-            "VLA-Adapter/LIBERO-Spatial-Pro": "action_head--checkpoint.pt",
-            "VLA-Adapter/LIBERO-Object-Pro": "action_head--checkpoint.pt",
-            "VLA-Adapter/LIBERO-Goal-Pro": "action_head--checkpoint.pt",
-            "VLA-Adapter/LIBERO-Long-Pro": "action_head--checkpoint.pt",
+            "VLA-Adapter-HDF5/LIBERO-Spatial-Pro": "action_head--checkpoint.pt",
+            "VLA-Adapter-HDF5/LIBERO-Object-Pro": "action_head--checkpoint.pt",
+            "VLA-Adapter-HDF5/LIBERO-Goal-Pro": "action_head--checkpoint.pt",
+            "VLA-Adapter-HDF5/LIBERO-Long-Pro": "action_head--checkpoint.pt",
         }
         if cfg.pretrained_checkpoint not in model_path_to_action_head_name.keys():
             raise ValueError("Unsupported HF Hub pretrained checkpoint found!")

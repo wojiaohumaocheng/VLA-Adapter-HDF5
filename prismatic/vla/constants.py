@@ -60,15 +60,14 @@ def detect_robot_platform():
 
     if "libero" in cmd_args:
         return "LIBERO"
-    elif "aloha" in cmd_args:
+    elif "aloha" in cmd_args or "custom_dataset" in cmd_args:
         return "ALOHA"
     elif "bridge" in cmd_args:
         return "BRIDGE"
     elif "calvin" in cmd_args:
         return "CALVIN"
     else:
-        # Default to LIBERO if unclear
-        return "LIBERO"
+        return "ALOHA"
 
 
 # Determine which robot platform to use

@@ -99,7 +99,48 @@ class PaddedCollatorForActionPrediction:
     padding_side: str = "right"
     pixel_values_dtype: torch.dtype = torch.float32
 
+
+    def _flatten_instances(self, instances: Sequence[Dict[str, torch.Tensor]]) \
+            -> Sequence[Dict[str, torch.Tensor]]:
+        """
+        支持 Dataset 里一个 instance 含有 K 个时间步：
+        - 假设时间维在第 0 维
+        - 以 input_ids 的第 0 维为“时间步个数”的参考
+        """
+        flat = []
+        for inst in instances:
+            ids = inst["input_ids"]
+            # 兼容老代码：本来就是 [L] 的直接加进去
+            if ids.dim() == 1:
+                flat.append(inst)
+                continue
+
+            K = ids.size(0)   # K 个时间步
+            for i in range(K):
+                new_inst = {}
+                for k, v in inst.items():
+                    # torch.Tensor：如果第 0 维是 K，就按时间步切；否则直接复用
+                    if isinstance(v, torch.Tensor):
+                        if v.size(0) == K:
+                            new_inst[k] = v[i]
+                        else:
+                            new_inst[k] = v
+                    # numpy：同理
+                    elif isinstance(v, np.ndarray):
+                        if v.shape[0] == K:
+                            new_inst[k] = v[i]
+                        else:
+                            new_inst[k] = v
+                    else:
+                        # 字符串、标量之类直接复用
+                        new_inst[k] = v
+                flat.append(new_inst)
+
+        return flat
+
     def __call__(self, instances: Sequence[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+        instances = self._flatten_instances(instances)
+
         input_ids, labels = tuple([instance[key] for instance in instances] for key in ("input_ids", "labels"))
         pixel_values = [instance["pixel_values"] for instance in instances]
         if "dataset_name" in instances[0]:

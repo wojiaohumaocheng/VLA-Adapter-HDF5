@@ -105,6 +105,7 @@ class HFCausalLLMBackbone(LLMBackbone, ABC):
         llm_family: str,
         llm_cls: Type[PreTrainedModel],
         hf_hub_path: str,
+        local_dir: str,
         llm_max_length: int = 2048,
         hf_token: Optional[str] = None,
         inference_mode: bool = False,
@@ -114,20 +115,32 @@ class HFCausalLLMBackbone(LLMBackbone, ABC):
         self.llm_family = llm_family
         self.llm_max_length = llm_max_length
         self.inference_mode = inference_mode
-
         # Initialize LLM (downloading from HF Hub if necessary) --> `llm_cls` is the actual {Model}ForCausalLM class!
         #   => Note: We're eschewing use of the AutoModel API so that we can be more explicit about LLM-specific details
         if not self.inference_mode:
             overwatch.info(f"Loading [bold]{llm_family}[/] LLM from [underline]`{hf_hub_path}`[/]", ctx_level=1)
+            config = AutoConfig.from_pretrained(str(local_dir), local_files_only=True, trust_remote_code=True)
             self.llm = llm_cls.from_pretrained(
-                hf_hub_path,
-                token=hf_token,
-                use_flash_attention_2=use_flash_attention_2 if not self.inference_mode else False,
+
+                str(local_dir),
+                config=config,
+                local_files_only=True,
+                token=None,
+                use_flash_attention_2=use_flash_attention_2 if not self.inference_mode else False
+                # hf_hub_path,
+                # token=hf_token,
                 # The following parameters are set to prevent `UserWarnings` from HF; we want greedy decoding!
-                do_sample=False,
-                temperature=1.0,
-                top_p=1.0,
+                # do_sample=False,
+                # temperature=1.0,
+                # top_p=1.0,
             )
+            if getattr(self.llm, "generation_config", None) is None:
+                from transformers import GenerationConfig
+                self.llm.generation_config= GenerationConfig
+            self.llm.generation_config.do_sample = False
+            self.llm.generation_config.temperature = 1.0
+            self.llm.generation_config.top_p = 1.0
+
 
         # [Contract] `inference_mode` means we're loading from a pretrained checkpoint; no need to load base weights!
         else:
@@ -154,9 +167,13 @@ class HFCausalLLMBackbone(LLMBackbone, ABC):
 
         # Load (Fast) Tokenizer
         overwatch.info(f"Loading [bold]{llm_family}[/] (Fast) Tokenizer via the AutoTokenizer API", ctx_level=1)
+        # self.tokenizer = AutoTokenizer.from_pretrained(
+        #     hf_hub_path, model_max_length=self.llm_max_length, token=hf_token, padding_side="right"
+        # )
         self.tokenizer = AutoTokenizer.from_pretrained(
-            hf_hub_path, model_max_length=self.llm_max_length, token=hf_token, padding_side="right"
+            str(local_dir), model_max_length=self.llm_max_length, token=hf_token, padding_side="right"
         )
+
 
         # Validation =>> Our VLM logic currently operates under the assumption that the tokenization of a new input
         #                starts with a <BOS> token unless `add_special_tokens = False`; for these models, we empirically

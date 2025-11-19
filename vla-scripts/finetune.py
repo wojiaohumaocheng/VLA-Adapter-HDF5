@@ -54,7 +54,8 @@ from prismatic.vla.constants import (
     PROPRIO_DIM,
     NUM_TOKENS
 )
-from prismatic.vla.datasets import RLDSDataset, RLDSBatchTransform
+from prismatic.vla.datasets import RLDSDataset, RLDSBatchTransform, HDF5BatchTransform
+from prismatic.vla.datasets.datasets import HDF5Dataset
 from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 from prismatic.models import load, load_vla
 
@@ -87,7 +88,7 @@ class FinetuneConfig:
     phase1_path: str = "None"
 
     # Training configuration
-    batch_size: int = 8                              # Batch size per device (total batch size = batch_size * num GPUs)
+    batch_size: int = 8                              # Batch size per device (total batch size = batch_size * num GPUs * num_samples_per_traj)
     learning_rate: float = 5e-4                      # Learning rate
     lr_warmup_steps: int = 0.1                       # Number of steps to warm up learning rate (from 10% to 100%)
     num_steps_before_decay: int = 100000             # Number of steps before LR decays by 10x
@@ -126,6 +127,11 @@ class FinetuneConfig:
     use_pro_version: bool = True                             # the version number
     phase: str = "Training"
     # fmt: on
+
+    dataset_type: str = "rlds" # hdf5
+    num_workers: int = 4
+    epoch_num: int = 1000
+    num_samples_per_traj: int = 4 # choose number of traj in single hdf5
 
 
 
@@ -432,8 +438,8 @@ def run_forward_pass(
             predicted_next_actions = predicted_actions[:, 1:]
             curr_action_l1_loss = torch.nn.L1Loss()(ground_truth_curr_action, predicted_curr_action)
             next_actions_l1_loss = torch.nn.L1Loss()(ground_truth_next_actions, predicted_next_actions)
-            if compute_diffusion_l1:
-                print('curr: ',curr_action_l1_loss.item())
+            # if compute_diffusion_l1:
+            #     print('curr: ',curr_action_l1_loss.item())
                 # print('next: ',next_actions_l1_loss.item())
 
             metrics.update(
@@ -949,33 +955,106 @@ def finetune(cfg: FinetuneConfig) -> None:
     use_wrist_image = cfg.num_images_in_input > 1
 
     # Create training and optional validation datasets
-    batch_transform = RLDSBatchTransform(
-        action_tokenizer,
-        processor.tokenizer,
-        image_transform=processor.image_processor.apply_transform,
-        prompt_builder_fn=PurePromptBuilder,
-        use_wrist_image=use_wrist_image,
-        use_proprio=cfg.use_proprio,
-        use_minivlm=cfg.use_minivlm
+
+    assert cfg.dataset_type in ("rlds", "hdf5"), \
+        "only support dataset_type rlds or hdf5, but get dataset_type: {}".format(cfg.dataset_type)
+
+    if cfg.dataset_type == "rlds":
+        batch_transform = RLDSBatchTransform(
+            action_tokenizer,
+            processor.tokenizer,
+            image_transform=processor.image_processor.apply_transform,
+            prompt_builder_fn=PurePromptBuilder,
+            use_wrist_image=use_wrist_image,
+            use_proprio=cfg.use_proprio,
+            use_minivlm=cfg.use_minivlm
         )
-    train_dataset = RLDSDataset(
-        cfg.data_root_dir,
-        cfg.dataset_name,
-        batch_transform,
-        resize_resolution=tuple(vla.module.config.image_sizes),
-        shuffle_buffer_size=cfg.shuffle_buffer_size,
-        image_aug=cfg.image_aug,
-    )
-    if cfg.use_val_set:
-        val_dataset = RLDSDataset(
+
+        train_dataset = RLDSDataset(
             cfg.data_root_dir,
             cfg.dataset_name,
             batch_transform,
             resize_resolution=tuple(vla.module.config.image_sizes),
-            shuffle_buffer_size=cfg.shuffle_buffer_size // 10,
+            shuffle_buffer_size=cfg.shuffle_buffer_size,
             image_aug=cfg.image_aug,
-            train=False,
         )
+    elif cfg.dataset_type == "hdf5":
+        batch_transform = HDF5BatchTransform(
+            action_tokenizer,
+            processor.tokenizer,
+            image_transform=processor.image_processor.apply_transform,
+            prompt_builder_fn=PurePromptBuilder,
+            use_wrist_image=use_wrist_image,
+            use_proprio=cfg.use_proprio,
+            use_minivlm=cfg.use_minivlm
+        )
+
+        train_dataset = HDF5Dataset(
+            data_dir=cfg.data_root_dir,
+            dataset_name=cfg.dataset_name,
+            resize_resolution=tuple(vla.module.config.image_sizes),
+            train=True,
+            image_aug=cfg.image_aug,
+            image_augment_kwargs=dict(
+                random_resized_crop=dict(scale=[0.9, 0.9], ratio=[1.0, 1.0]),
+                random_brightness=[0.2],
+                random_contrast=[0.8, 1.2],
+                random_saturation=[0.8, 1.2],
+                random_hue=[0.05],
+                augment_order=[
+                    "random_resized_crop",
+                    "random_brightness",
+                    "random_contrast",
+                    "random_saturation",
+                    "random_hue",
+                ],
+            ),
+            batch_transform=batch_transform,
+            num_samples_per_traj=cfg.num_samples_per_traj
+
+        )
+
+
+    if cfg.use_val_set:
+        if cfg.dataset_type == "rlds":
+            batch_transform = RLDSBatchTransform(
+                action_tokenizer,
+                processor.tokenizer,
+                image_transform=processor.image_processor.apply_transform,
+                prompt_builder_fn=PurePromptBuilder,
+                use_wrist_image=use_wrist_image,
+                use_proprio=cfg.use_proprio,
+                use_minivlm=cfg.use_minivlm
+            )
+            val_dataset = RLDSDataset(
+                cfg.data_root_dir,
+                cfg.dataset_name,
+                batch_transform,
+                resize_resolution=tuple(vla.module.config.image_sizes),
+                shuffle_buffer_size=cfg.shuffle_buffer_size // 10,
+                image_aug=cfg.image_aug,
+                train=False,
+            )
+        elif cfg.dataset_type == "hdf5":
+            batch_transform = HDF5BatchTransform(
+                action_tokenizer,
+                processor.tokenizer,
+                image_transform=processor.image_processor.apply_transform,
+                prompt_builder_fn=PurePromptBuilder,
+                use_wrist_image=use_wrist_image,
+                use_proprio=cfg.use_proprio,
+                use_minivlm=cfg.use_minivlm
+            )
+
+            train_dataset = HDF5Dataset(
+                data_dir=cfg.data_root_dir,
+                dataset_name=cfg.dataset_name,
+                resize_resolution=tuple(vla.module.config.image_sizes),
+                train=False,
+                image_aug=False,
+                batch_transform=batch_transform
+            )
+
 
     # [Important] Save dataset statistics so that we can unnormalize actions during inference
     if distributed_state.is_main_process:
@@ -990,7 +1069,10 @@ def finetune(cfg: FinetuneConfig) -> None:
         batch_size=cfg.batch_size,
         sampler=None,
         collate_fn=collator,
-        num_workers=0,  # Important: Set to 0 if using RLDS, which uses its own parallelism
+        persistent_workers=True,
+        pin_memory=True,
+        prefetch_factor=2,
+        num_workers=cfg.num_workers,  # Important: Set to 0 if using RLDS, which uses its own parallelism
     )
     print('Len of dataloader: ', len(dataloader))
     if cfg.use_val_set:
@@ -1000,6 +1082,8 @@ def finetune(cfg: FinetuneConfig) -> None:
             batch_size=val_batch_size,
             sampler=None,
             collate_fn=collator,
+            persistent_workers=True,
+            pin_memory=True,
             num_workers=0,  # Important: Set to 0 if using RLDS, which uses its own parallelism
         )
 
@@ -1016,110 +1100,129 @@ def finetune(cfg: FinetuneConfig) -> None:
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
         vla.train()
         optimizer.zero_grad()
-        for batch_idx, batch in enumerate(dataloader):
-            # Compute training metrics and loss
-            compute_diffusion_l1 = (cfg.use_l1_regression and batch_idx % cfg.diffusion_sample_freq == 0) or (cfg.use_diffusion and batch_idx % cfg.diffusion_sample_freq == 0)
-            loss, metrics = run_forward_pass(
-                vla=vla,
-                action_head=action_head,
-                proprio_projector=proprio_projector if cfg.use_proprio else None,
-                batch=batch,
-                action_tokenizer=action_tokenizer,
-                device_id=device_id,
-                use_l1_regression=cfg.use_l1_regression,
-                use_proprio=cfg.use_proprio,
-                use_film=cfg.use_film,
-                num_patches=NUM_PATCHES,
-                compute_diffusion_l1=compute_diffusion_l1,
-                use_pro_version=cfg.use_pro_version,
-                cfg=cfg,
-            )
-
-            # Normalize loss to account for gradient accumulation
-            normalized_loss = loss / cfg.grad_accumulation_steps
-
-            # Backward pass
-            normalized_loss.backward()
-
-            # Store recent train metrics
-            for metric_name, value in metrics.items():
-                if metric_name in recent_metrics:
-                    recent_metrics[metric_name].append(value)
-
-            # Compute gradient step index
-            gradient_step_idx = batch_idx // cfg.grad_accumulation_steps
-
-            # Compute smoothened train metrics
-            smoothened_metrics = compute_smoothened_metrics(recent_metrics)
-
-            # Push Metrics to W&B (every wandb_log_freq gradient steps)
-            log_step = gradient_step_idx if not cfg.resume else cfg.resume_step + gradient_step_idx
-            if distributed_state.is_main_process and log_step % cfg.wandb_log_freq == 0:
-                log_metrics_to_wandb(smoothened_metrics, "VLA Train", log_step, wandb)
-
-            # [If applicable] Linearly warm up learning rate from 10% to 100% of original
-            if cfg.lr_warmup_steps > 0:
-                lr_progress = min((gradient_step_idx + 1) / cfg.lr_warmup_steps, 1.0)  # Cap at 1.0
-                current_lr = original_lr * (0.1 + 0.9 * lr_progress)
-                for param_group in optimizer.param_groups:
-                    param_group["lr"] = current_lr
-
-            if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
-                # Log the learning rate
-                # Make sure to do this AFTER any learning rate modifications (e.g., warmup/decay)
-                wandb.log(
-                    {
-                        "VLA Train/Learning Rate": scheduler.get_last_lr()[0],
-                    },
-                    step=log_step,
-                )
-
-            # Optimizer and LR scheduler step
-            if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad()
-                progress.update()
-
-            # Save model checkpoint: either keep latest checkpoint only or all checkpoints
-            if gradient_step_idx > 0 and log_step % cfg.save_freq == 0:
-                save_training_checkpoint(
-                    cfg=cfg,
-                    run_dir=run_dir,
-                    log_step=log_step,
-                    vla=vla,
-                    processor=processor,
-                    proprio_projector=proprio_projector if cfg.use_proprio else None,
-                    noisy_action_projector=None,
-                    action_head=action_head,
-                    train_dataset=train_dataset,
-                    distributed_state=distributed_state,
-                    new_state_dict=RAW_STATE_DICT,
-                )
-
-            # Test model on validation set
-            if cfg.use_val_set and log_step > 0 and log_step % cfg.val_freq == 0:
-                run_validation(
+        train_step = 1
+        for epoch_idx in range(cfg.epoch_num):
+            for batch_idx, batch in enumerate(dataloader):
+                # Compute training metrics and loss
+                compute_diffusion_l1 = (cfg.use_l1_regression and batch_idx % cfg.diffusion_sample_freq == 0) or (cfg.use_diffusion and batch_idx % cfg.diffusion_sample_freq == 0)
+                loss, metrics = run_forward_pass(
                     vla=vla,
                     action_head=action_head,
-                    noisy_action_projector=None,
                     proprio_projector=proprio_projector if cfg.use_proprio else None,
-                    val_dataloader=val_dataloader,
+                    batch=batch,
                     action_tokenizer=action_tokenizer,
                     device_id=device_id,
-                    cfg=cfg,
+                    use_l1_regression=cfg.use_l1_regression,
+                    use_proprio=cfg.use_proprio,
+                    use_film=cfg.use_film,
                     num_patches=NUM_PATCHES,
-                    log_step=log_step,
-                    distributed_state=distributed_state,
-                    val_time_limit=cfg.val_time_limit,
+                    compute_diffusion_l1=compute_diffusion_l1,
+                    use_pro_version=cfg.use_pro_version,
+                    cfg=cfg,
                 )
-                # Set model back to training mode after validation
-                vla.train()
 
-            # Stop training when max_steps is reached
-            if log_step == cfg.max_steps:
-                print(f"Max step {cfg.max_steps} reached! Stopping training...")
-                break
+
+                # Normalize loss to account for gradient accumulation
+                normalized_loss = loss / cfg.grad_accumulation_steps
+
+                # Backward pass
+                normalized_loss.backward()
+
+                # Store recent train metrics
+                for metric_name, value in metrics.items():
+                    if metric_name in recent_metrics:
+                        recent_metrics[metric_name].append(value)
+
+                # Compute gradient step index
+                gradient_step_idx = batch_idx // cfg.grad_accumulation_steps
+
+                # Compute smoothened train metrics
+                smoothened_metrics = compute_smoothened_metrics(recent_metrics)
+
+                # Push Metrics to W&B (every wandb_log_freq gradient steps)
+                log_step = gradient_step_idx if not cfg.resume else cfg.resume_step + gradient_step_idx
+
+                # 修改前缀：显示 epoch / step
+                progress.set_description(
+                    f"Step {train_step}/{cfg.max_steps}"
+                )
+                try:
+                    lr_show = scheduler.get_last_lr()[0]
+                except Exception:
+                    lr_show = original_lr
+
+                progress.set_postfix({
+                    "loss": float(loss.detach().cpu()),
+                    "lr": lr_show,
+                })
+
+                if distributed_state.is_main_process and log_step % cfg.wandb_log_freq == 0:
+                    log_metrics_to_wandb(smoothened_metrics, "VLA Train", log_step, wandb)
+
+                # [If applicable] Linearly warm up learning rate from 10% to 100% of original
+                if cfg.lr_warmup_steps > 0:
+                    lr_progress = min((gradient_step_idx + 1) / cfg.lr_warmup_steps, 1.0)  # Cap at 1.0
+                    current_lr = original_lr * (0.1 + 0.9 * lr_progress)
+                    for param_group in optimizer.param_groups:
+                        param_group["lr"] = current_lr
+
+                if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
+                    # Log the learning rate
+                    # Make sure to do this AFTER any learning rate modifications (e.g., warmup/decay)
+                    wandb.log(
+                        {
+                            "VLA Train/Learning Rate": scheduler.get_last_lr()[0],
+                        },
+                        step=log_step,
+                    )
+
+                # Optimizer and LR scheduler step
+                if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
+                    optimizer.step()
+                    scheduler.step()
+                    optimizer.zero_grad()
+                    progress.update()
+
+                # Save model checkpoint: either keep latest checkpoint only or all checkpoints
+                if gradient_step_idx > 0 and log_step % cfg.save_freq == 0:
+                    save_training_checkpoint(
+                        cfg=cfg,
+                        run_dir=run_dir,
+                        log_step=log_step,
+                        vla=vla,
+                        processor=processor,
+                        proprio_projector=proprio_projector if cfg.use_proprio else None,
+                        noisy_action_projector=None,
+                        action_head=action_head,
+                        train_dataset=train_dataset,
+                        distributed_state=distributed_state,
+                        new_state_dict=RAW_STATE_DICT,
+                    )
+
+                # Test model on validation set
+                if cfg.use_val_set and log_step > 0 and log_step % cfg.val_freq == 0:
+                    run_validation(
+                        vla=vla,
+                        action_head=action_head,
+                        noisy_action_projector=None,
+                        proprio_projector=proprio_projector if cfg.use_proprio else None,
+                        val_dataloader=val_dataloader,
+                        action_tokenizer=action_tokenizer,
+                        device_id=device_id,
+                        cfg=cfg,
+                        num_patches=NUM_PATCHES,
+                        log_step=log_step,
+                        distributed_state=distributed_state,
+                        val_time_limit=cfg.val_time_limit,
+                    )
+                    # Set model back to training mode after validation
+                    vla.train()
+
+                # Stop training when max_steps is reached
+                if train_step == cfg.max_steps:
+                    print(f"Max step {cfg.max_steps} reached! Stopping training...")
+                    break
+                train_step += 1
 
 
 if __name__ == "__main__":

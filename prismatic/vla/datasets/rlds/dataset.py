@@ -126,8 +126,9 @@ def make_dataset_from_rlds(
     """
     REQUIRED_KEYS = {"observation", "action"}
     if language_key is not None:
-        REQUIRED_KEYS.add(language_key)
+        REQUIRED_KEYS.add(language_key) # 'language_instruction'
 
+    @tf.autograph.experimental.do_not_convert
     def restructure(traj):
         # apply a standardization function, if provided
         if standardize_fn is not None:
@@ -316,7 +317,6 @@ def apply_trajectory_transforms(
             partial(getattr(goal_relabeling, goal_relabeling_strategy), **goal_relabeling_kwargs),
             num_parallel_calls,
         )
-
     # must run task augmentation before chunking, in case it changes goal timesteps
     if train and task_augment_strategy is not None:
         # perform task augmentation (e.g., dropping keys)
@@ -344,7 +344,6 @@ def apply_trajectory_transforms(
             partial(traj_transforms.subsample, subsample_length=subsample_length),
             num_parallel_calls,
         )
-
     return dataset
 
 
@@ -395,6 +394,7 @@ def apply_frame_transforms(
 
     # Convenience wrapper that takes a function that operates on a non-chunked "observation" dict and applies
     # it to the chunked "observation" dict as well as the non-chunked "task" dict
+    # @tf.autograph.experimental.do_not_convert
     def apply_obs_transform(fn: Callable[[Dict], Dict], frame: Dict) -> Dict:
         frame["task"] = fn(frame["task"])
         frame["observation"] = dl.vmap(fn)(frame["observation"])
@@ -488,10 +488,10 @@ def make_interleaved_dataset(
             datasets according to their sampling weights. If None, defaults to AUTOTUNE for every dataset.
     """
     # Default to uniform sampling (if `sample_weights` is not specified)
-    if not sample_weights:
+    if not sample_weights: # False
         sample_weights = [1.0] * len(dataset_kwargs_list)
 
-    if len(sample_weights) != len(dataset_kwargs_list):
+    if len(sample_weights) != len(dataset_kwargs_list): # False
         raise ValueError(f"sample_weights must be None or have length {len(dataset_kwargs_list)}.")
 
     # Check valid `traj_transform_kwargs` and `frame_transform_kwargs`

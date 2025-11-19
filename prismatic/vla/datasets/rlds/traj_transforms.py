@@ -21,8 +21,25 @@ def chunk_act_obs(traj: Dict, window_size: int, future_action_window_size: int =
     action, and `future_action_window_size` actions from the future. "pad_mask" is added to "observation" and
     indicates whether an observation should be considered padding (i.e. if it had come from a timestep
     before the start of the trajectory).
+    输入：
+    * traj["observation"]：形状 [T, ...] 的各种观测（可以是 dict 里很多数组）
+    * traj["action"]：形状 [T, action_dim]
+    * window_size：过去窗口长度
+    * future_action_window_size：动作还要往后看多少步
+
+    目标：把一条长度 T 的轨迹，变成“每个时间步都带一个局部 window”的格式：
+    * 对第 i 步的 observation chunk：
+    [..., s_{i-window+1}, ..., s_{i-1}, s_i]
+    不够的时候从最前面用第 0 帧“复制填充”
+
+    * 对第 i 步的 action chunk：
+    [..., a_{i-window+1}, ..., a_{i-1}, a_i, a_{i+1}, ..., a_{i+future}]
+    不够的时候：
+
+    左边 (<0) 用第 0 帧填充
+    右边 (>T-1) 用最后一帧填充（也就是 “goal timestep”）
     """
-    traj_len = tf.shape(traj["action"])[0]
+    traj_len = tf.shape(traj["action"])[0] # future_action_window_size=7, but aloha=25
     action_dim = traj["action"].shape[-1]
     effective_traj_len = traj_len - future_action_window_size
     chunk_indices = tf.broadcast_to(tf.range(-window_size + 1, 1), [effective_traj_len, window_size]) + tf.broadcast_to(

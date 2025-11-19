@@ -47,6 +47,8 @@ class DinoSigLIPImageTransform:
 
 
 class DinoSigLIPViTBackbone(VisionBackbone):
+    dino_timm_path_or_url: str
+
     def __init__(
         self,
         vision_backbone_id: str,
@@ -64,15 +66,37 @@ class DinoSigLIPViTBackbone(VisionBackbone):
         self.siglip_timm_path_or_url = DINOSigLIP_VISION_BACKBONES[vision_backbone_id]["siglip"]
 
         # Initialize both Featurizers (ViTs) by downloading from HF / TIMM Hub if necessary
+        # self.dino_featurizer: VisionTransformer = timm.create_model(
+        #     self.dino_timm_path_or_url, pretrained=True, num_classes=0, img_size=self.default_image_size
+        # )
         self.dino_featurizer: VisionTransformer = timm.create_model(
-            self.dino_timm_path_or_url, pretrained=True, num_classes=0, img_size=self.default_image_size
+            model_name=self.dino_timm_path_or_url,
+            pretrained=True,
+            num_classes=0,
+            img_size=default_image_size,
+            pretrained_cfg_overlay={
+                "file": "pretrained_models/vit_large_patch14_reg4_dinov2.lvd142m/pytorch_model.bin",
+                "hf_hub_id": None,
+                "url": ""
+            }
         )
         self.dino_featurizer.eval()
 
+        # self.siglip_featurizer: VisionTransformer = timm.create_model(
+        #     self.siglip_timm_path_or_url, pretrained=True, num_classes=0, img_size=self.default_image_size
+        # )
+
+
         self.siglip_featurizer: VisionTransformer = timm.create_model(
-            self.siglip_timm_path_or_url, pretrained=True, num_classes=0, img_size=self.default_image_size
+            model_name=self.siglip_timm_path_or_url, pretrained=True, num_classes=0, img_size=default_image_size,
+            pretrained_cfg_overlay={
+                "file": "pretrained_models/ViT-SO400M-14-SigLIP/open_clip_pytorch_model.bin",
+                "hf_hub_id": None,
+                "url":""
+            }
         )
         self.siglip_featurizer.eval()
+
 
         # Monkey-Patch the `forward()` function of the featurizers to ensure FSDP-compatibility
         #   => Note: By default set `get_intermediate_layers` to return the *SECOND-TO-LAST* layer patches!
