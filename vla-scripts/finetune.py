@@ -1046,7 +1046,7 @@ def finetune(cfg: FinetuneConfig) -> None:
                 use_minivlm=cfg.use_minivlm
             )
 
-            train_dataset = HDF5Dataset(
+            val_dataset = HDF5Dataset(
                 data_dir=cfg.data_root_dir,
                 dataset_name=cfg.dataset_name,
                 resize_resolution=tuple(vla.module.config.image_sizes),
